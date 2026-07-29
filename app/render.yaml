@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: nexagadget-media-engine
+    runtime: docker
+    plan: free
+    autoDeploy: true

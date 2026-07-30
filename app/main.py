@@ -63,9 +63,9 @@ async def generate_video(
         f.write(await audio.read())
 
     filter_complex = (
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,"
-        "zoompan=z='min(zoom+0.0012,1.15)':d=125:s=1080x1920:fps=25[v];"
+        "[0:v]scale=720:1280:force_original_aspect_ratio=increase,"
+        "crop=720:1280,"
+        "zoompan=z='min(zoom+0.0015,1.15)':d=75:s=720x1280:fps=15[v];"
         "[2:a]volume=0.18[bg];"
         "[1:a][bg]amix=inputs=2:duration=first:dropout_transition=3[a]"
     )
@@ -77,8 +77,8 @@ async def generate_video(
         "-i", str(music_path),
         "-filter_complex", filter_complex,
         "-map", "[v]", "-map", "[a]",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k",
         "-shortest", str(output_path),
     ]
 

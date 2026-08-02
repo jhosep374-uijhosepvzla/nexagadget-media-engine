@@ -30,6 +30,7 @@ temp/*
 # Mantener música del proyecto
 !app/assets/music/*.mp3
 
+
 # OS
 .DS_Store
 Thumbs.db

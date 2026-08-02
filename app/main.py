@@ -9,10 +9,14 @@ from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 
+from app.strategy import router as strategy_router
+
 app = FastAPI(
     title="Nexa Media Engine",
     version="1.1.0"
 )
+
+app.include_router(strategy_router)
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 MUSIC_DIR = ASSETS_DIR / "music"

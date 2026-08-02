@@ -99,10 +99,14 @@ async def generate_video(
     script_text: Optional[str] = Form(None),
     add_logo: bool = Form(True),
 ):
-    if image.content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(400, "La imagen debe ser JPEG, PNG o WEBP")
-    if audio.content_type not in ("audio/mpeg", "audio/mp3"):
-        raise HTTPException(400, "El audio debe ser MP3")
+    if not image.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+    raise HTTPException(400, "La imagen debe ser JPEG, PNG o WEBP")
+    if not audio.filename.lower().endswith(".mp3"):
+    raise HTTPException(400, "El audio debe ser MP3")
+
+        print("IMAGE:", image.filename, image.content_type)
+        print("AUDIO:", audio.filename, audio.content_type)
+
 
     tracks = list(MUSIC_DIR.glob("*.mp3"))
     if not tracks:

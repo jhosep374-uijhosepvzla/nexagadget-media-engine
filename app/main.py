@@ -99,13 +99,36 @@ async def generate_video(
     script_text: Optional[str] = Form(None),
     add_logo: bool = Form(True),
 ):
-    if not image.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-    raise HTTPException(400, "La imagen debe ser JPEG, PNG o WEBP")
-    if not audio.filename.lower().endswith(".mp3"):
-    raise HTTPException(400, "El audio debe ser MP3")
+    # Mostrar temporalmente qué recibe el servidor
+    print("IMAGE:", image.filename, image.content_type)
+    print("AUDIO:", audio.filename, audio.content_type)
 
-        print("IMAGE:", image.filename, image.content_type)
-        print("AUDIO:", audio.filename, audio.content_type)
+    # Validar por extensión (más confiable que content_type)
+    if not image.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+        raise HTTPException(400, "La imagen debe ser JPEG, PNG o WEBP")
+
+    if not audio.filename.lower().endswith(".mp3"):
+        raise HTTPException(400, "El audio debe ser MP3")
+
+    tracks = list(MUSIC_DIR.glob("*.mp3"))
+    if not tracks:
+        raise HTTPException(500, "No hay pistas de música en app/assets/music/")
+
+    music_path = random.choice(tracks)
+
+    job_id = uuid.uuid4().hex
+    tmp_dir = Path(tempfile.gettempdir()) / job_id
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    image_path = tmp_dir / "image.jpg"
+    audio_path = tmp_dir / "voice.mp3"
+    output_path = tmp_dir / "video.mp4"
+
+    with image_path.open("wb") as f:
+        f.write(await image.read())
+
+    with audio_path.open("wb") as f:
+        f.write(await audio.read())
 
 
     tracks = list(MUSIC_DIR.glob("*.mp3"))

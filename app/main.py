@@ -124,8 +124,25 @@ async def generate_video(
     audio_path = tmp_dir / "voice.mp3"
     output_path = tmp_dir / "video.mp4"
 
-    with image_path.open("wb") as f:
-        f.write(await image.read())
+    with audio_path.open("wb") as f:
+    f.write(await audio.read())
+
+print("======================================")
+print("AUDIO GUARDADO:", audio_path)
+print("Tamaño:", audio_path.stat().st_size, "bytes")
+
+result = subprocess.run(
+    ["ffprobe", str(audio_path)],
+    capture_output=True,
+    text=True
+)
+
+print("FFPROBE RETURN CODE:", result.returncode)
+print("FFPROBE STDOUT:")
+print(result.stdout)
+print("FFPROBE STDERR:")
+print(result.stderr)
+print("======================================")
 
     with audio_path.open("wb") as f:
         f.write(await audio.read())

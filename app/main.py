@@ -99,54 +99,15 @@ async def generate_video(
     script_text: Optional[str] = Form(None),
     add_logo: bool = Form(True),
 ):
-    # Mostrar temporalmente qué recibe el servidor
     print("IMAGE:", image.filename, image.content_type)
     print("AUDIO:", audio.filename, audio.content_type)
 
-    # Validar por extensión (más confiable que content_type)
+    # Validación por extensión: más confiable que content_type,
+    # que a veces llega vacío o distinto según el cliente que suba el archivo.
     if not image.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
         raise HTTPException(400, "La imagen debe ser JPEG, PNG o WEBP")
-
     if not audio.filename.lower().endswith(".mp3"):
         raise HTTPException(400, "El audio debe ser MP3")
-
-    tracks = list(MUSIC_DIR.glob("*.mp3"))
-    if not tracks:
-        raise HTTPException(500, "No hay pistas de música en app/assets/music/")
-
-    music_path = random.choice(tracks)
-
-    job_id = uuid.uuid4().hex
-    tmp_dir = Path(tempfile.gettempdir()) / job_id
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-
-    image_path = tmp_dir / "image.jpg"
-    audio_path = tmp_dir / "voice.mp3"
-    output_path = tmp_dir / "video.mp4"
-
-    with audio_path.open("wb") as f:
-    f.write(await audio.read())
-
-print("======================================")
-print("AUDIO GUARDADO:", audio_path)
-print("Tamaño:", audio_path.stat().st_size, "bytes")
-
-result = subprocess.run(
-    ["ffprobe", str(audio_path)],
-    capture_output=True,
-    text=True
-)
-
-print("FFPROBE RETURN CODE:", result.returncode)
-print("FFPROBE STDOUT:")
-print(result.stdout)
-print("FFPROBE STDERR:")
-print(result.stderr)
-print("======================================")
-
-    with audio_path.open("wb") as f:
-        f.write(await audio.read())
-
 
     tracks = list(MUSIC_DIR.glob("*.mp3"))
     if not tracks:
@@ -165,6 +126,17 @@ print("======================================")
         f.write(await image.read())
     with audio_path.open("wb") as f:
         f.write(await audio.read())
+
+    # --- Diagnóstico temporal: confirma que el audio subido es válido ---
+    print("=" * 60)
+    print("AUDIO GUARDADO:", audio_path, "-", audio_path.stat().st_size, "bytes")
+    probe = subprocess.run(
+        ["ffprobe", "-hide_banner", str(audio_path)],
+        capture_output=True, text=True,
+    )
+    print("FFPROBE RETURN:", probe.returncode)
+    print("FFPROBE STDERR:", probe.stderr[-800:])
+    print("=" * 60)
 
     # --- Duración real de la voz, con tope de seguridad ---
     voice_duration = get_audio_duration(audio_path)

@@ -13,7 +13,7 @@ from app.strategy import router as strategy_router
 
 app = FastAPI(
     title="Nexa Media Engine",
-    version="1.1.0"
+    version="1.2.0"
 )
 
 app.include_router(strategy_router)
@@ -27,6 +27,12 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FPS = 15
 MAX_DURATION_SECONDS = 60  # tope de seguridad para Reels / TikTok / Shorts
 WORDS_PER_SUBTITLE_CHUNK = 6
+
+# --- Escena de cierre (marca) ---
+OUTRO_SECONDS = 2.5
+SLOGAN_TEXT = "Mas facil, con un click."
+OUTRO_BG_COLOR = "0x0a0a12"
+BRAND_GREEN = "0x39FF14"
 
 
 @app.get("/")
@@ -91,6 +97,36 @@ def build_subtitle_filters(script_text: str, duration: float, tmp_dir: Path) -> 
     return "," + ",".join(filters)
 
 
+def build_outro_chain(
+    outro_bg_index: int,
+    logo_index: Optional[int],
+    slogan_file: Path,
+) -> str:
+    """Escena de cierre de marca: fondo oscuro, logo con fade-in y slogan.
+    Se concatena al final del clip principal. No depende de Whisper/libass."""
+    parts = [
+        f"[{outro_bg_index}:v]trim=duration={OUTRO_SECONDS},"
+        f"setpts=PTS-STARTPTS,fps={FPS}[outrobg]"
+    ]
+    last = "outrobg"
+
+    if logo_index is not None:
+        parts.append(
+            f"[{logo_index}:v]format=rgba,scale=280:-1,"
+            "fade=t=in:st=0:d=0.6:alpha=1[logobig]"
+        )
+        parts.append(f"[{last}][logobig]overlay=(W-w)/2:(H-h)/2-80[ologo]")
+        last = "ologo"
+
+    parts.append(
+        f"[{last}]drawtext=fontfile={FONT_PATH}:textfile={slogan_file}:"
+        f"fontsize=46:fontcolor={BRAND_GREEN}:borderw=3:bordercolor=black:"
+        "x=(w-text_w)/2:y=h*0.64:"
+        r"alpha='min(max((t-1.0)/0.6\,0)\,1)'[outrov]"
+    )
+    return ";".join(parts)
+
+
 @app.post("/generate-video")
 async def generate_video(
     background_tasks: BackgroundTasks,
@@ -102,8 +138,6 @@ async def generate_video(
     print("IMAGE:", image.filename, image.content_type)
     print("AUDIO:", audio.filename, audio.content_type)
 
-    # Validación por extensión: más confiable que content_type,
-    # que a veces llega vacío o distinto según el cliente que suba el archivo.
     if not image.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
         raise HTTPException(400, "La imagen debe ser JPEG, PNG o WEBP")
     if not audio.filename.lower().endswith(".mp3"):
@@ -127,7 +161,6 @@ async def generate_video(
     with audio_path.open("wb") as f:
         f.write(await audio.read())
 
-    # --- Diagnóstico temporal: confirma que el audio subido es válido ---
     print("=" * 60)
     print("AUDIO GUARDADO:", audio_path, "-", audio_path.stat().st_size, "bytes")
     probe = subprocess.run(
@@ -138,39 +171,51 @@ async def generate_video(
     print("FFPROBE STDERR:", probe.stderr[-800:])
     print("=" * 60)
 
-    # --- Duración real de la voz, con tope de seguridad ---
+    # --- Duración: voz + escena de cierre, con tope de seguridad total ---
     voice_duration = get_audio_duration(audio_path)
-    duration = min(voice_duration, MAX_DURATION_SECONDS)
-    total_frames = max(int(duration * FPS), 1)
+    main_duration = min(voice_duration, MAX_DURATION_SECONDS - OUTRO_SECONDS)
+    main_duration = max(main_duration, 1.0)
+    total_duration = main_duration + OUTRO_SECONDS
+    main_frames = max(int(main_duration * FPS), 1)
 
-    video_chain = (
+    slogan_file = tmp_dir / "slogan.txt"
+    slogan_file.write_text(SLOGAN_TEXT, encoding="utf-8")
+
+    # --- Clip principal ---
+    main_chain = (
         "[0:v]scale=720:1280:force_original_aspect_ratio=increase,"
         "crop=720:1280,"
-        f"zoompan=z='min(zoom+0.0015,1.15)':d={total_frames}:s=720x1280:fps={FPS}"
+        f"zoompan=z='min(zoom+0.0015,1.15)':d={main_frames}:s=720x1280:fps={FPS},"
+        # zoompan no se detiene solo en el frame 'd': sin este trim, se queda
+        # congelado repitiendo el último frame y el concat de abajo nunca
+        # llega a la escena de cierre.
+        f"trim=start_frame=0:end_frame={main_frames},setpts=PTS-STARTPTS"
     )
-
-    # --- Subtítulos (opcional, si n8n manda el guion) ---
     if script_text:
-        video_chain += build_subtitle_filters(script_text, duration, tmp_dir)
-    video_chain += "[subbed]"
+        main_chain += build_subtitle_filters(script_text, main_duration, tmp_dir)
+    main_chain += "[mainv]"
 
-    use_logo = add_logo and LOGO_PATH.exists()
-
+    # --- Inputs: imagen, voz, música, [logo], fondo de cierre ---
     inputs = [
-        "-loop", "1", "-i", str(image_path),
-        "-i", str(audio_path),
-        "-i", str(music_path),
+        "-loop", "1", "-i", str(image_path),  # 0
+        "-i", str(audio_path),                # 1
+        "-i", str(music_path),                # 2
     ]
-    if use_logo:
+    logo_index = None
+    if add_logo and LOGO_PATH.exists():
         inputs += ["-loop", "1", "-i", str(LOGO_PATH)]
-        video_chain += ";[3:v]scale=150:-1[logo];[subbed][logo]overlay=W-w-24:H-h-40:shortest=1[v]"
-    else:
-        video_chain += ";[subbed]copy[v]"
+        logo_index = 3
+    inputs += ["-f", "lavfi", "-i", f"color=c={OUTRO_BG_COLOR}:s=720x1280:r={FPS}"]
+    outro_bg_index = 4 if logo_index is not None else 3
+
+    outro_chain = build_outro_chain(outro_bg_index, logo_index, slogan_file)
 
     filter_complex = (
-        video_chain
+        main_chain + ";" + outro_chain
+        + ";[mainv][outrov]concat=n=2:v=1:a=0[v]"
+        + f";[1:a]apad=whole_dur={total_duration:.3f}[voice_p]"
         + ";[2:a]volume=0.18[bg]"
-        + ";[1:a][bg]amix=inputs=2:duration=first:dropout_transition=3[a]"
+        + ";[voice_p][bg]amix=inputs=2:duration=first:dropout_transition=3[a]"
     )
 
     cmd = [
@@ -178,7 +223,7 @@ async def generate_video(
         *inputs,
         "-filter_complex", filter_complex,
         "-map", "[v]", "-map", "[a]",
-        "-t", f"{duration:.3f}",
+        "-t", f"{total_duration:.3f}",
         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k",
         str(output_path),

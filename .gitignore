@@ -29,6 +29,7 @@ temp/*
 
 # Mantener música del proyecto
 !app/assets/music/*.mp3
+!app/assets/outro/*.mp4
 
 
 # OS
